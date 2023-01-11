@@ -15,7 +15,7 @@ interface User32 {
 ### Use a library's functions
 
 ```kotlin
-val user32 = EasyFFM[User32::class]
+val user32 = foreignLibrary(User32::class)
 val keyState = user32.GetKeyState(KeyEvent.VK_SPACE)
 println("Key state: $keyState")
 ```
