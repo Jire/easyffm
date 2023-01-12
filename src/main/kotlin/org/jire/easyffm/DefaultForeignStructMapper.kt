@@ -1,10 +1,7 @@
 package org.jire.easyffm
 
 import javassist.*
-import javassist.bytecode.AccessFlag
-import javassist.bytecode.Bytecode
-import javassist.bytecode.MethodInfo
-import javassist.bytecode.Opcode
+import javassist.bytecode.*
 import org.jire.easyffm.ClassPoolHelper.match
 import org.jire.easyffm.DescriptorHelper.descriptor
 import org.jire.easyffm.ForeignStruct.StructArray
@@ -18,6 +15,7 @@ import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
 import java.lang.invoke.MutableCallSite
 import java.util.concurrent.ThreadLocalRandom
+import kotlin.math.max
 
 object DefaultForeignStructMapper : ForeignStructMapper {
 
@@ -110,46 +108,9 @@ object DefaultForeignStructMapper : ForeignStructMapper {
             for (i in 0..fields.lastIndex) {
                 val field = fields[i]
                 val returnTypeCt = cp.match(field.returnType)
-                val bytecode = Bytecode(
-                    constPool,
-                    4, 1
-                ).apply {
-                    if (field.returnType.isArray) {
-                        addOpcode(Opcode.ACONST_NULL)
-                        addReturn(returnTypeCt)
-                        return@apply
-                    }
 
-                    addAload(0)
-                    addGetfield(this@make, "segment", "Ljava/lang/foreign/MemorySegment;")
-
-                    val memLayoutClassName = field.returnType.memoryLayoutString
-                    val memoryLayoutName = field.memoryLayout.javaClass.name
-                    addGetstatic(
-                        cp.get(ValueLayout::class.java.name),
-                        memLayoutClassName,
-                        field.memoryLayout.javaClass.descriptor
-                    )
-                    addLconst(i.toLong())
-
-                    addInvokeinterface(
-                        cp.get(MemorySegment::class.java.name),
-                        "getAtIndex",
-                        returnTypeCt,
-                        arrayOf(
-                            cp.get(memoryLayoutName),
-                            CtClass.longType
-                        ),
-                        4 // 1 for "this", 1 for layout, 2 for long (index)
-                    )
-
-                    addReturn(returnTypeCt)
-                }
-                val methodInfo = MethodInfo(constPool, field.getName, field.getMethod.descriptor).apply {
-                    codeAttribute = bytecode.toCodeAttribute()
-                    accessFlags = AccessFlag.PUBLIC or AccessFlag.FINAL
-                }
-                addMethod(CtMethod.make(methodInfo, this))
+                addGetMethod(i, constPool, field, returnTypeCt)
+                addSetMethod(i, constPool, field, returnTypeCt)
             }
         }
 
@@ -167,6 +128,104 @@ object DefaultForeignStructMapper : ForeignStructMapper {
 
         @Suppress("UNCHECKED_CAST")
         return invoker.invoke(segment) as T
+    }
+
+    private fun CtClass.addGetMethod(
+        i: Int,
+        constPool: ConstPool,
+        field: ForeignStructField,
+        returnTypeCt: CtClass
+    ) {
+        val bytecode = Bytecode(
+            constPool,
+            4, 1
+        ).apply {
+            if (field.returnType.isArray) {
+                addOpcode(Opcode.ACONST_NULL)
+                addReturn(returnTypeCt)
+                return@apply
+            }
+
+            addAload(0)
+            addGetfield(this@addGetMethod, "segment", "Ljava/lang/foreign/MemorySegment;")
+
+            val memLayoutClassName = field.returnType.memoryLayoutString
+            val memoryLayoutName = field.memoryLayout.javaClass.name
+            addGetstatic(
+                cp.get(ValueLayout::class.java.name),
+                memLayoutClassName,
+                field.memoryLayout.javaClass.descriptor
+            )
+            addLconst(i.toLong())
+
+            addInvokeinterface(
+                cp.get(MemorySegment::class.java.name),
+                "getAtIndex",
+                returnTypeCt,
+                arrayOf(
+                    cp.get(memoryLayoutName),
+                    CtClass.longType
+                ),
+                4 // 1 for "this", 1 for layout, 2 for long (index)
+            )
+
+            addReturn(returnTypeCt)
+        }
+        val methodInfo = MethodInfo(constPool, field.getName, field.getMethod.descriptor).apply {
+            codeAttribute = bytecode.toCodeAttribute()
+            accessFlags = AccessFlag.PUBLIC or AccessFlag.FINAL
+        }
+        addMethod(CtMethod.make(methodInfo, this))
+    }
+
+    private fun CtClass.addSetMethod(
+        i: Int,
+        constPool: ConstPool,
+        field: ForeignStructField,
+        returnTypeCt: CtClass
+    ) {
+        val bytecode = Bytecode(
+            constPool,
+            5, 3
+        ).apply {
+            if (field.returnType.isArray) {
+                addReturn(null)
+                return@apply
+            }
+
+            addAload(0)
+            addGetfield(this@addSetMethod, "segment", "Ljava/lang/foreign/MemorySegment;")
+
+            val memLayoutClassName = field.returnType.memoryLayoutString
+            val memoryLayoutName = field.memoryLayout.javaClass.name
+            addGetstatic(
+                cp.get(ValueLayout::class.java.name),
+                memLayoutClassName,
+                field.memoryLayout.javaClass.descriptor
+            )
+            addLconst(i.toLong())
+            addLoad(1, returnTypeCt) // arg1
+
+            val returnTypeSize = field.returnType.memoryLayout.byteSize().toInt()
+            addInvokeinterface(
+                cp.get(MemorySegment::class.java.name),
+                "setAtIndex",
+                CtClass.voidType,
+                arrayOf(
+                    cp.get(memoryLayoutName),
+                    CtClass.longType,
+                    returnTypeCt,
+                ),
+                4 + max(1, returnTypeSize / 4) // 1 for "this", 1 for layout, 2 for long (index), 1-2 for value
+            )
+
+            addReturn(null)
+        }
+        val methodInfo = MethodInfo(constPool, field.setName, field.setMethod.descriptor).apply {
+            codeAttribute = bytecode.toCodeAttribute()
+            accessFlags = AccessFlag.PUBLIC or AccessFlag.FINAL
+        }
+        addMethod(CtMethod.make(methodInfo, this))
     }
 
 }
