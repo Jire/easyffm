@@ -19,3 +19,40 @@ val user32 = foreignLibrary(User32::class)
 val keyState = user32.GetKeyState(KeyEvent.VK_SPACE)
 println("Key state: $keyState")
 ```
+
+### Define a struct
+
+```kotlin
+@FieldOrder(["x", "y"])
+interface Point : ForeignStruct {
+    var x: Int
+    var y: Int
+}
+```
+
+### Create a struct and use it
+
+```kotlin
+val point = foreignStruct(Point::class)
+point.y = 6
+println("x=${point.x}   y=${point.y}") // x=0   y=6
+```
+
+### You can use structs in functions, too
+
+```kotlin
+interface Mouse {
+    fun position(): Point
+    fun move(point: Point)
+}
+```
+
+### Structs support arrays and nesting
+
+```kotlin
+@FieldOrder(["points"])
+interface Points : ForeignStruct {
+    @StructArray(10) // array size
+    val points: Array<Point>
+}
+```
