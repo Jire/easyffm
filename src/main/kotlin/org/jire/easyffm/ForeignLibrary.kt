@@ -1,5 +1,6 @@
 package org.jire.easyffm
 
+import org.jire.easyffm.EasyFFM.defaultMemorySession
 import java.lang.foreign.MemorySession
 import kotlin.reflect.KClass
 
@@ -24,5 +25,3 @@ fun <T : Any> foreignLibrary(
     libraryName: String = kClass.simpleName!!,
     memorySession: MemorySession = defaultMemorySession()
 ): T = ForeignLibrary.foreignLibrary(kClass.java, libraryName, memorySession)
-
-internal fun defaultMemorySession() = MemorySession.global()

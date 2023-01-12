@@ -10,10 +10,11 @@ import org.jire.easyffm.MemoryLayoutHelper.memoryLayoutString
 import java.lang.foreign.MemorySession
 import java.lang.invoke.MethodHandle
 import java.lang.reflect.Method
+import java.util.concurrent.ThreadLocalRandom
 
 internal object DefaultForeignLibraryMapper : ForeignLibraryMapper {
 
-    private const val GENERATED_CLASS_PREFIX = "$\$EasyFFM$$"
+    private const val GENERATED_CLASS_SUFFIX = "$\$EasyFFM$$"
 
     private val defaultImports = arrayOf(
         "java.lang.foreign",
@@ -32,7 +33,7 @@ internal object DefaultForeignLibraryMapper : ForeignLibraryMapper {
     ): T {
         val cp = cp
 
-        val newClassName = "${jClass.packageName}.$GENERATED_CLASS_PREFIX$libraryName"
+        val newClassName = "${jClass.packageName}.$libraryName$GENERATED_CLASS_SUFFIX${ThreadLocalRandom.current().nextLong()}"
         val ctClass = cp.makeClass(newClassName).apply make@{
             addInterface(cp.match(jClass))
 
@@ -84,8 +85,8 @@ internal object DefaultForeignLibraryMapper : ForeignLibraryMapper {
         conBody.append(
             "this.$fieldName = linker.downcallHandle(" +
                     "(Addressable) symbolLookup.lookup(\"$methodName\").get()," +
-                    "FunctionDescriptor.of(${returnType.memoryLayoutString}," +
-                    "new MemoryLayout[] { ${parameterTypes.joinToString(",") { it.memoryLayoutString }} })" +
+                    "FunctionDescriptor.of(ValueLayout.${returnType.memoryLayoutString}," +
+                    "new MemoryLayout[] { ${parameterTypes.joinToString(",") { "ValueLayout.${it.memoryLayoutString}" }} })" +
                     ");"
         )
 
@@ -97,9 +98,7 @@ internal object DefaultForeignLibraryMapper : ForeignLibraryMapper {
         ).apply {
             addAload(0)
             addGetfield(this@addMethod, fieldName, "Ljava/lang/invoke/MethodHandle;")
-            for (i in 1..parameterCount) {
-                addIload(i)
-            }
+            addLoadParameters(method.parameterTypes.map { cp.match(it) }.toTypedArray(), 1)
             addInvokevirtual(
                 methodHandleClass, "invokeExact", returnTypeCtClass,
                 parameterTypes.map { cp.match(it) }.toTypedArray()
